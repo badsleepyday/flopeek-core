@@ -848,6 +848,7 @@ pub(crate) fn sync_identity_v2(
     let public_identity_index = PublicIdentityIndex {
         node_pks: &public_to_pk,
         node_uids: &public_to_uid,
+        cold_start: identity_store_empty,
     };
     sync_edges_and_placements(
         transaction,
@@ -1880,6 +1881,7 @@ fn sync_canonical_external_import_roots(
 struct PublicIdentityIndex<'a> {
     node_pks: &'a HashMap<String, i64>,
     node_uids: &'a HashMap<String, NodeUid>,
+    cold_start: bool,
 }
 
 fn sync_edges_and_placements(
@@ -1891,11 +1893,7 @@ fn sync_edges_and_placements(
     structural_batch: Option<&Value>,
     public_index: &PublicIdentityIndex<'_>,
 ) -> rusqlite::Result<()> {
-    let cold_start = transaction.query_row(
-        "SELECT NOT EXISTS (SELECT 1 FROM nodes_v2 WHERE project_pk = ?1)",
-        [project_pk],
-        |row| row.get::<_, bool>(0),
-    )?;
+    let cold_start = public_index.cold_start;
     let mut current_edge_uids = HashSet::<Vec<u8>>::new();
     let mut current_placement_hashes = HashSet::<Vec<u8>>::new();
     let mut current_evidence = HashSet::<(i64, Vec<u8>)>::new();
