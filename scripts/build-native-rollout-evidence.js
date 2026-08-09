@@ -405,6 +405,7 @@ function buildPacket({
   databaseOpenEvidence,
   soakEvidence,
   surfaceEvidence,
+  allowIneligible = false,
   execFileSync,
 }) {
   const manifest = readJson(path.join(root, "package.json"));
@@ -441,13 +442,19 @@ function buildPacket({
     },
   };
   const decision = evaluateNativeDefaultRollout(evidence);
-  if (!decision.eligible) {
+  if (!decision.eligible && !allowIneligible) {
     throw new Error(`Rollout evidence is not eligible: ${decision.reasons.join(", ")}.`);
   }
   const artifact = Object.values(binaries)[0];
   return {
     schemaVersion: NATIVE_ROLLOUT_EVIDENCE_SCHEMA,
-    status: "complete",
+    // A blocked packet is a complete measurement packet whose supplied
+    // evidence is deliberately retained for diagnosis, but whose promotion
+    // decision is negative. It must never be treated as a release candidate.
+    // Keeping this distinct from the initial "incomplete" packet prevents a
+    // failed gate from discarding otherwise valid revision/binary-bound raw
+    // measurements while preserving the JavaScript default.
+    status: decision.eligible ? "complete" : "blocked",
     binding: {
       packageName: manifest.name,
       packageVersion: manifest.version,
@@ -457,6 +464,7 @@ function buildPacket({
       sourceDigest: artifact.sourceDigest,
       binaries,
     },
+    decision,
     evidence,
   };
 }
@@ -473,6 +481,7 @@ if (require.main === module) {
   const soakEvidence = argument(argv, "--soak");
   const surfaceEvidence = argument(argv, "--surface-matrix");
   const output = argument(argv, "--output");
+  const allowIneligible = argv.includes("--allow-ineligible");
   if (![candidateFile, adapterParityFile, benchmarkFile, profiles, assets, databaseOpenEvidence, soakEvidence, surfaceEvidence, output].every(Boolean)) {
     throw new Error("Usage: build-native-rollout-evidence --candidate <json> --adapter-parity <json> --benchmark <json> --profiles <directory> --assets <directory> --database-open-evidence <json> --soak <json> --surface-matrix <json> --output <json>.");
   }
@@ -486,9 +495,10 @@ if (require.main === module) {
     databaseOpenEvidence: path.resolve(databaseOpenEvidence),
     soakEvidence: path.resolve(soakEvidence),
     surfaceEvidence: path.resolve(surfaceEvidence),
+    allowIneligible,
   });
   fs.writeFileSync(path.resolve(output), `${JSON.stringify(packet, null, 2)}\n`);
-  process.stdout.write(`Wrote complete native rollout evidence to ${path.resolve(output)}.\n`);
+  process.stdout.write(`Wrote ${packet.status} native rollout evidence to ${path.resolve(output)}.\n`);
 }
 
 module.exports = {

@@ -151,6 +151,8 @@ jobs:
     needs: [preflight, native-platforms]
     runs-on: ubuntu-latest
     timeout-minutes: 180
+    outputs:
+      rollout_status: ${{ steps.packet-status.outputs.status }}
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
@@ -217,8 +219,21 @@ jobs:
           --database-open-evidence "$CANDIDATE_EVIDENCE/database-open-evidence.json"
           --soak "$CANDIDATE_EVIDENCE/native-soak.json"
           --surface-matrix "$CANDIDATE_EVIDENCE/native-surface-matrix.json"
+          --allow-ineligible
           --output "$CANDIDATE_EVIDENCE/native-rollout-evidence.json"
+      - id: packet-status
+        name: Record immutable rollout decision
+        shell: pwsh
+        run: |
+          $packet = Get-Content "$env:CANDIDATE_EVIDENCE/native-rollout-evidence.json" -Raw | ConvertFrom-Json
+          if ($packet.status -notin @('complete', 'blocked')) { throw "Unexpected rollout packet status: $($packet.status)" }
+          "status=$($packet.status)" >> $env:GITHUB_OUTPUT
+          Write-Host "Native rollout packet status: $($packet.status)"
+          if ($packet.status -eq 'blocked') {
+            Write-Host "Native default remains JavaScript; the packet retains the exact negative gate decision."
+          }
       - name: Pack main package once with exact complete rollout evidence
+        if: steps.packet-status.outputs.status == 'complete'
         shell: pwsh
         run: |
           New-Item -ItemType Directory -Force -Path $env:CANDIDATE_BUNDLE | Out-Null
@@ -236,6 +251,7 @@ jobs:
           Copy-Item "$env:CANDIDATE_EVIDENCE/test-summary.json" $env:CANDIDATE_BUNDLE
           Copy-Item -Recurse "$env:CANDIDATE_EVIDENCE/profiles" (Join-Path $env:CANDIDATE_BUNDLE 'profiles')
       - name: Build exact release manifest
+        if: steps.packet-status.outputs.status == 'complete'
         run: >-
           node scripts/build-native-release-manifest.js
           --tag "v${{ needs.preflight.outputs.package_version }}"
@@ -244,6 +260,7 @@ jobs:
           --assets "$CANDIDATE_BUNDLE"
           --output "$CANDIDATE_BUNDLE/native-release-manifest.json"
       - name: Bind preliminary bundle to this workflow run
+        if: steps.packet-status.outputs.status == 'complete'
         run: >-
           node scripts/verify-native-candidate.js
           --bundle "$CANDIDATE_BUNDLE"
@@ -253,8 +270,33 @@ jobs:
           --release-channel "${{ needs.preflight.outputs.release_channel }}"
           --workflow-run-id "${{ github.run_id }}"
       - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: steps.packet-status.outputs.status == 'complete'
         with:
           name: native-candidate-bundle-preliminary
+          path: ${{ runner.temp }}/flopeek-native-bundle/
+          if-no-files-found: error
+          retention-days: 30
+      - name: Assemble blocked evidence bundle without release metadata
+        if: steps.packet-status.outputs.status == 'blocked'
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path $env:CANDIDATE_BUNDLE | Out-Null
+          Copy-Item "$env:CANDIDATE_EVIDENCE/native-rollout-evidence.json" $env:CANDIDATE_BUNDLE
+          Copy-Item "$env:CANDIDATE_EVIDENCE/adapter-parity.json" $env:CANDIDATE_BUNDLE
+          Copy-Item "$env:CANDIDATE_EVIDENCE/benchmark.json" $env:CANDIDATE_BUNDLE
+          Copy-Item "$env:CANDIDATE_EVIDENCE/database-open-evidence.json" $env:CANDIDATE_BUNDLE
+          Copy-Item "$env:CANDIDATE_EVIDENCE/real-corpus.json" $env:CANDIDATE_BUNDLE
+          Copy-Item "$env:CANDIDATE_EVIDENCE/native-surface-matrix.json" $env:CANDIDATE_BUNDLE
+          Copy-Item "$env:CANDIDATE_EVIDENCE/native-soak.json" $env:CANDIDATE_BUNDLE
+          Copy-Item "$env:CANDIDATE_EVIDENCE/test-summary.json" $env:CANDIDATE_BUNDLE
+          Copy-Item -Recurse "$env:CANDIDATE_EVIDENCE/profiles" (Join-Path $env:CANDIDATE_BUNDLE 'profiles')
+          Copy-Item "$env:CANDIDATE_ASSETS/*.tgz" $env:CANDIDATE_BUNDLE
+          Copy-Item "$env:CANDIDATE_ASSETS/checksums-*.txt" $env:CANDIDATE_BUNDLE
+          node scripts/build-native-candidate-evidence-manifest.js --bundle "$env:CANDIDATE_BUNDLE" --source-sha "${{ needs.preflight.outputs.source_sha }}" --package-version "${{ needs.preflight.outputs.package_version }}" --workflow-run-id "${{ github.run_id }}" --output "$env:CANDIDATE_BUNDLE/native-candidate-evidence-manifest.json"
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        if: steps.packet-status.outputs.status == 'blocked'
+        with:
+          name: native-candidate-evidence-blocked
           path: ${{ runner.temp }}/flopeek-native-bundle/
           if-no-files-found: error
           retention-days: 30
@@ -262,6 +304,7 @@ jobs:
   candidate-installs:
     name: Clean install ${{ matrix.package }}
     needs: [preflight, assemble]
+    if: needs.assemble.outputs.rollout_status == 'complete'
     strategy:
       fail-fast: false
       matrix:
@@ -326,6 +369,7 @@ jobs:
   finalize:
     name: Finalize immutable candidate after six clean installs
     needs: [preflight, candidate-installs]
+    if: needs.candidate-installs.result == 'success'
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
