@@ -4,10 +4,48 @@ const assert = require("node:assert/strict");
 const test = require("node:test");
 const { adapterContractDigest } = require("../../src/adapter-registry");
 const { NATIVE_BENCHMARK_SCHEMA, REQUIRED_NATIVE_ADAPTERS } = require("../../src/native-rollout-gate");
+const { REQUIRED_DOGFOOD_SURFACES } = require("../../src/native-dogfood-evidence");
 const { CORE_MODE_SCHEMA, CoreModeError, requestedCoreMode, selectCoreMode } = require("../../src/core-mode");
 const { createConfiguredCoreClient, createSurfaceCoreClient, createSurfaceCoreRuntime, observeCoreRuntime } = require("../../src/core-runtime");
 const { createJsCoreClient } = require("../../src/js-core-client");
 const { machineAdapterParityEvidence } = require("../helpers/native-adapter-parity-evidence");
+
+function completeDogfoodEvidence() {
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const date = `2026-01-${String(index + 1).padStart(2, "0")}`;
+    return {
+      date,
+      startedAt: `${date}T01:00:00.000Z`,
+      completedAt: `${date}T02:00:00.000Z`,
+      sourceRevision: "b".repeat(40),
+      binarySha256: "a".repeat(64),
+      status: "passed",
+      repositories: 8,
+      exactRepositories: 8,
+      adapters: [...REQUIRED_NATIVE_ADAPTERS],
+      targetRepositoryWrites: false,
+      surfaces: { ...REQUIRED_DOGFOOD_SURFACES },
+      evidenceSha256: "f".repeat(64),
+    };
+  });
+  return {
+    schemaVersion: "flopeek-native-dogfood-evidence/v1",
+    status: "complete",
+    requiredDays: 7,
+    sourceRevision: "b".repeat(40),
+    binarySha256: "a".repeat(64),
+    generatedAt: "2026-01-08T00:00:00.000Z",
+    days,
+    summary: {
+      distinctDays: 7,
+      repositories: 8,
+      exactRepositories: 8,
+      adapters: [...REQUIRED_NATIVE_ADAPTERS],
+      targetRepositoryWrites: false,
+      surfaces: { ...REQUIRED_DOGFOOD_SURFACES },
+    },
+  };
+}
 
 function completeEvidence() {
   const databaseOpenEvidence = {
@@ -96,6 +134,7 @@ function completeEvidence() {
       databaseOpenEvidence: { sha256: "f".repeat(64), evidence: databaseOpenEvidence },
       memoryPeakNoWorseThanJavaScript: true,
     },
+    dogfood: completeDogfoodEvidence(),
   };
 }
 
