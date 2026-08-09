@@ -518,7 +518,18 @@ fn collect(
 pub fn parse_native_python_facts(path: &str, source: &str) -> Option<NativeJsFacts> {
     let mut p = Parser::new();
     p.set_language(&tree_sitter_python::LANGUAGE.into()).ok()?;
-    let t = p.parse(source, None)?;
+    parse_native_python_facts_with_parser(path, source, &mut p)
+}
+
+/// Parse Python with a caller-owned parser so a cold multi-file scan can
+/// retain the configured grammar across a bounded worker chunk. The fact
+/// traversal remains identical to the fresh-parser path above.
+pub fn parse_native_python_facts_with_parser(
+    path: &str,
+    source: &str,
+    parser: &mut Parser,
+) -> Option<NativeJsFacts> {
+    let t = parser.parse(source, None)?;
     let r = t.root_node();
     let mut b = BTreeMap::new();
     fn walk(n: Node<'_>, s: &str, b: &mut BTreeMap<String, (String, String)>) {
@@ -608,7 +619,7 @@ pub fn parse_native_python_facts(path: &str, source: &str) -> Option<NativeJsFac
 
 #[cfg(test)]
 mod tests {
-    use super::parse_native_python_facts;
+    use super::{parse_native_python_facts, parse_native_python_facts_with_parser};
 
     #[test]
     fn preserves_python_imports_symbols_calls_and_route_decorators() {
@@ -646,5 +657,25 @@ mod tests {
             .collect::<Vec<_>>();
         assert_eq!(symbols.len(), 1);
         assert_eq!(symbols[0].evidence.range.start.line, 4);
+    }
+
+    #[test]
+    fn reused_tree_sitter_parser_preserves_python_facts() {
+        let mut parser = tree_sitter::Parser::new();
+        parser
+            .set_language(&tree_sitter_python::LANGUAGE.into())
+            .unwrap();
+        let source = "from .service import PaymentService\n\ndef load():\n    return PaymentService.find()\n";
+        let fresh = parse_native_python_facts("src/service.py", source).unwrap();
+        let reused =
+            parse_native_python_facts_with_parser("src/service.py", source, &mut parser).unwrap();
+        assert_eq!(reused, fresh);
+
+        let second_source = "class PaymentService:\n    def find(self):\n        return None\n";
+        let second_reused =
+            parse_native_python_facts_with_parser("src/model.py", second_source, &mut parser)
+                .unwrap();
+        let second_fresh = parse_native_python_facts("src/model.py", second_source).unwrap();
+        assert_eq!(second_reused, second_fresh);
     }
 }
