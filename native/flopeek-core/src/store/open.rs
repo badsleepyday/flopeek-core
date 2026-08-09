@@ -157,6 +157,14 @@ pub fn open_native_store(root: &Path) -> rusqlite::Result<Connection> {
         PRAGMA journal_mode = WAL;
         PRAGMA synchronous = NORMAL;
         PRAGMA busy_timeout = 5000;
+        -- Keep the first durable promotion below SQLite's default 1000-page
+        -- auto-checkpoint. WAL remains crash-recoverable and bounded: once
+        -- this 32 MiB threshold is reached SQLite checkpoints, while the
+        -- journal-size limit prevents a completed checkpoint from retaining
+        -- an unbounded file. This avoids making every cold graph promotion
+        -- synchronously checkpoint its entire write set.
+        PRAGMA wal_autocheckpoint = 8192;
+        PRAGMA journal_size_limit = 33554432;
         -- Keep a bounded repository-local page cache during one promotion.
         -- Identity writes revisit the same indexes, but the cache must not
         -- dominate the native process peak on large graphs. This is an

@@ -402,14 +402,26 @@ pub(in crate::protocol) fn reuse_native_persistent_project_no_op(
     let Some(expected_facts_digest) = status.promoted_facts_digest.as_ref() else {
         return Ok(None);
     };
-    let current = with_persistent_session_connection(session, root, |_session, connection| {
+    let current = with_persistent_session_connection(session, root, |session, connection| {
         let current = current_complete_graph(connection, &project_id).map_err(|error| {
             NativeProtocolError {
                 code: "store-read-failed",
                 message: error.to_string(),
             }
         })?;
-        let payload = current
+        let cached_snapshot = current.as_ref().and_then(|current| {
+            session
+                .persistent_graph
+                .as_ref()
+                .filter(|cached| {
+                    cached.project_id == project_id && cached.graph_version == current.graph_version
+                })
+                .and_then(|cached| cached.public_snapshot.clone())
+        });
+        if cached_snapshot.is_some() {
+            return Ok((current, cached_snapshot));
+        }
+        let snapshot = current
             .as_ref()
             .map(|current| complete_graph_payload(connection, &project_id, current.graph_version))
             .transpose()
@@ -417,10 +429,16 @@ pub(in crate::protocol) fn reuse_native_persistent_project_no_op(
                 code: "store-read-failed",
                 message: error.to_string(),
             })?
-            .flatten();
-        Ok((current, payload))
+            .flatten()
+            .map(|stored| native_public_graph_snapshot(&stored.payload))
+            .transpose()
+            .map_err(|error| NativeProtocolError {
+                code: "store-read-failed",
+                message: error.message,
+            })?;
+        Ok((current, snapshot))
     })?;
-    let (Some(current), Some(stored)) = current else {
+    let (Some(current), Some(public_graph)) = current else {
         return Ok(None);
     };
     if current.material_fingerprint != expected_facts_digest.as_str()
@@ -428,7 +446,6 @@ pub(in crate::protocol) fn reuse_native_persistent_project_no_op(
     {
         return Ok(None);
     }
-    let public_graph = native_public_graph_snapshot(&stored.payload)?;
     let mut envelope = native_public_graph_envelope(&public_graph);
     envelope["analysis"]["refresh"] = json!({
         "strategy": "incremental-content-analysis",
