@@ -1465,7 +1465,8 @@ fn import_bindings(
                 );
             }
         }
-        for child in named_children(node) {
+        let mut cursor = node.walk();
+        for child in node.named_children(&mut cursor) {
             visit(child, source, specifier, bindings);
         }
     }
@@ -1542,7 +1543,8 @@ fn collect_bindings(
             }
         }
     }
-    for child in named_children(node) {
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
         collect_bindings(child, source, imports, cron_receivers, fastify_factories);
     }
 }
@@ -2076,7 +2078,8 @@ fn collect_structural(
         }
         _ => {}
     }
-    for child in named_children(node) {
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
         collect_structural(
             child,
             input,
@@ -2400,6 +2403,7 @@ pub fn scan_native_js_facts(input_root: &Path) -> Result<NativeJsFactsStatus, St
                 let mut javascript_parser = None;
                 let mut typescript_parser = None;
                 let mut tsx_parser = None;
+                let mut python_parser = None;
                 let mut java_parser = None;
                 let mut csharp_parser = None;
                 chunk.iter().map(move |(path, source_hash)| {
@@ -2463,6 +2467,18 @@ pub fn scan_native_js_facts(input_root: &Path) -> Result<NativeJsFactsStatus, St
                                 parser
                             });
                             parse_native_js_facts_with_parser(path, source, parser)
+                        }
+                        "py" => {
+                            let parser = python_parser.get_or_insert_with(|| {
+                                let mut parser = tree_sitter::Parser::new();
+                                parser
+                                    .set_language(&tree_sitter_python::LANGUAGE.into())
+                                    .expect("tree-sitter Python language must be available");
+                                parser
+                            });
+                            crate::python_facts::parse_native_python_facts_with_parser(
+                                path, source, parser,
+                            )
                         }
                         "java" => {
                             let parser = java_parser.get_or_insert_with(|| {
