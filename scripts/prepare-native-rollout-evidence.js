@@ -45,6 +45,7 @@ function preparePacket({ root, inputs, assets, allowIneligible = false }) {
   const databaseOpenEvidence = path.join(inputs, "database-open-evidence.json");
   const soakEvidence = path.join(inputs, "native-soak.json");
   const surfaceEvidence = path.join(inputs, "native-surface-matrix.json");
+  const dogfoodEvidence = path.join(inputs, "native-dogfood.json");
   const missing = [candidate, adapterParity, benchmark, profiles, databaseOpenEvidence, soakEvidence, surfaceEvidence]
     .filter((entry) => !fs.existsSync(entry));
   if (missing.length) {
@@ -60,6 +61,7 @@ function preparePacket({ root, inputs, assets, allowIneligible = false }) {
     databaseOpenEvidence,
     soakEvidence,
     surfaceEvidence,
+    dogfoodEvidence: fs.existsSync(dogfoodEvidence) ? dogfoodEvidence : null,
     allowIneligible,
   });
 }

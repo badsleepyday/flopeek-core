@@ -11,6 +11,9 @@ const {
   REQUIRED_NATIVE_ADAPTERS,
   evaluateNativeDefaultRollout,
 } = require("../../src/native-rollout-gate");
+const {
+  REQUIRED_DOGFOOD_SURFACES,
+} = require("../../src/native-dogfood-evidence");
 
 function benchmarkRow(repository, { cold = 1.1, unchanged = 1.2, oneFileChange = 2.1 } = {}) {
   const sample = (speedup) => ({
@@ -41,6 +44,43 @@ function queryRawSamples(operationP95Ms) {
         .map(([operation, value]) => [operation, Array(101).fill(value)])),
     ])),
   }));
+}
+
+function dogfoodEvidence() {
+  const days = Array.from({ length: 7 }, (_, index) => {
+    const date = `2026-01-${String(index + 1).padStart(2, "0")}`;
+    return {
+      date,
+      startedAt: `${date}T01:00:00.000Z`,
+      completedAt: `${date}T02:00:00.000Z`,
+      sourceRevision: "b".repeat(40),
+      binarySha256: "a".repeat(64),
+      status: "passed",
+      repositories: 8,
+      exactRepositories: 8,
+      adapters: [...REQUIRED_NATIVE_ADAPTERS],
+      targetRepositoryWrites: false,
+      surfaces: { ...REQUIRED_DOGFOOD_SURFACES },
+      evidenceSha256: "f".repeat(64),
+    };
+  });
+  return {
+    schemaVersion: "flopeek-native-dogfood-evidence/v1",
+    status: "complete",
+    requiredDays: 7,
+    sourceRevision: "b".repeat(40),
+    binarySha256: "a".repeat(64),
+    generatedAt: "2026-01-08T00:00:00.000Z",
+    days,
+    summary: {
+      distinctDays: 7,
+      repositories: 8,
+      exactRepositories: 8,
+      adapters: [...REQUIRED_NATIVE_ADAPTERS],
+      targetRepositoryWrites: false,
+      surfaces: { ...REQUIRED_DOGFOOD_SURFACES },
+    },
+  };
 }
 
 function evidence(overrides = {}) {
@@ -108,6 +148,7 @@ function evidence(overrides = {}) {
       databaseOpenEvidence: { sha256: "f".repeat(64), evidence: databaseOpenEvidence },
       memoryPeakNoWorseThanJavaScript: true,
     },
+    dogfood: dogfoodEvidence(),
     ...overrides,
   };
 }
@@ -265,4 +306,22 @@ test("native rollout gate requires five distinct benchmark repositories", () => 
   assert.equal(result.eligible, false);
   assert.equal(result.benchmark.repositories, 1);
   assert.ok(result.reasons.includes("benchmark-corpus-insufficient"));
+});
+
+test("native rollout gate rejects a missing or incomplete elapsed dogfood window", () => {
+  const result = evaluateNativeDefaultRollout(evidence({ dogfood: {
+    ...dogfoodEvidence(),
+    status: "pending",
+    days: [],
+    summary: {
+      distinctDays: 0,
+      repositories: 0,
+      exactRepositories: 0,
+      adapters: [],
+      targetRepositoryWrites: false,
+      surfaces: { cliCommands: 0, mcpTools: 0, httpRoutes: 0, unclassified: 0 },
+    },
+  } }));
+  assert.equal(result.eligible, false);
+  assert.ok(result.reasons.includes("native-dogfood-window-incomplete"));
 });

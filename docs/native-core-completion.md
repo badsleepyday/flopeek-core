@@ -54,6 +54,10 @@ commit.
 - Exact soak — 2,000/2,000 refresh events passed in persistent and cache-disabled modes with parity and RSS plateau assertions.
 - Exact local benchmark/profile — compatibility digest and graph statistics matched for cold, unchanged, and one-file-change states. Results are repository- and machine-specific, not a universal speed claim.
 - Exact database-open evidence — captured from metadata-only observations of the same binary.
+- Native dogfood contract — `scripts/run-native-dogfood-day.js` records one read-only
+  UTC day against the exact source revision and Linux x64 binary; the aggregate
+  validator requires seven consecutive days, the full adapter/surface matrix,
+  and zero target-repository writes.
 - `npm run check:docs`, `npm run check:support`, `npm run check:document-contracts`, and actionlint 1.7.12 — passed.
 
 ## Candidate and rollout gates
@@ -64,6 +68,12 @@ commit.
 | Candidate manifest/provenance | `pending` | The candidate workflow must checksum the main tarball, six platform tarballs/binaries, raw parity/corpus/benchmark/profile/database/soak/surface evidence, and test summary. |
 | Protected promotion | `blocked` | Repository environment approval and immutable candidate provenance must exist before npm or GitHub Release publication. No publication was attempted locally. |
 | Seven-day dogfooding | `pending` | Seven consecutive days across the declared repository/adapter/surface matrix cannot be manufactured in one remediation session. |
+
+The GitHub Actions workflow `native-dogfood.yml` carries the exact blocked
+candidate binary between daily runs. Each run appends one UTC day to the
+artifact-backed window; `native-dogfood.json` remains `pending` until seven
+consecutive days validate. A pending window is an explicit negative gate, not a
+release approval or a substitute for elapsed evidence.
 
 ## Rollout state
 

@@ -23,6 +23,7 @@ const REQUIRED_BUNDLE_ENTRIES = Object.freeze([
   "flopeek-main.tgz",
   "native-release-manifest.json",
   "native-rollout-evidence.json",
+  "native-dogfood.json",
   "native-surface-matrix.json",
   "native-soak.json",
   "profiles",

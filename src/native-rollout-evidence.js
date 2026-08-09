@@ -4,6 +4,7 @@ const crypto = require("node:crypto");
 const fs = require("node:fs");
 const path = require("node:path");
 const { adapterContractDigest } = require("./adapter-registry");
+const { validateNativeDogfoodEvidence } = require("./native-dogfood-evidence");
 const { validateNativeAdapterParity } = require("./native-rollout-gate");
 const {
   readPlatformNativePackageMetadata,
@@ -171,6 +172,14 @@ function loadBundledNativeRolloutEvidence(root = path.resolve(__dirname, ".."), 
     validateDatabaseOpenEvidence(databaseOpen.evidence, binaries);
   } catch (error) {
     throw new Error(`Complete native rollout evidence has invalid database-open evidence: ${error.message}`);
+  }
+  try {
+    validateNativeDogfoodEvidence(packet.evidence.dogfood, {
+      sourceRevision: benchmarkBinding.repositoryRevision,
+      binarySha256: benchmarkBinding.binarySha256,
+    });
+  } catch (error) {
+    throw new Error(`Bound native rollout evidence has invalid native dogfood evidence: ${error.message}`);
   }
   return Object.freeze({
     packet,
