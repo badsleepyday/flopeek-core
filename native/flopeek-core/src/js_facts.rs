@@ -1465,7 +1465,8 @@ fn import_bindings(
                 );
             }
         }
-        for child in named_children(node) {
+        let mut cursor = node.walk();
+        for child in node.named_children(&mut cursor) {
             visit(child, source, specifier, bindings);
         }
     }
@@ -1542,7 +1543,8 @@ fn collect_bindings(
             }
         }
     }
-    for child in named_children(node) {
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
         collect_bindings(child, source, imports, cron_receivers, fastify_factories);
     }
 }
@@ -2076,7 +2078,8 @@ fn collect_structural(
         }
         _ => {}
     }
-    for child in named_children(node) {
+    let mut cursor = node.walk();
+    for child in node.named_children(&mut cursor) {
         collect_structural(
             child,
             input,
