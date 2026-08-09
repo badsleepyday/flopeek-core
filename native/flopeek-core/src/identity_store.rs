@@ -857,6 +857,7 @@ pub(crate) fn sync_identity_v2(
         payload,
         structural_batch,
         &public_identity_index,
+        identity_store_empty,
     )?;
     Ok(())
 }
@@ -1890,12 +1891,8 @@ fn sync_edges_and_placements(
     payload: &Value,
     structural_batch: Option<&Value>,
     public_index: &PublicIdentityIndex<'_>,
+    cold_start: bool,
 ) -> rusqlite::Result<()> {
-    let cold_start = transaction.query_row(
-        "SELECT NOT EXISTS (SELECT 1 FROM nodes_v2 WHERE project_pk = ?1)",
-        [project_pk],
-        |row| row.get::<_, bool>(0),
-    )?;
     let mut current_edge_uids = HashSet::<Vec<u8>>::new();
     let mut current_placement_hashes = HashSet::<Vec<u8>>::new();
     let mut current_evidence = HashSet::<(i64, Vec<u8>)>::new();
