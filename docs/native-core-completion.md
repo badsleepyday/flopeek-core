@@ -6,7 +6,23 @@ successfully. Candidate and promotion gates remain separate: local success is
 not a substitute for six-platform artifacts, protected approval, or time-based
 dogfooding.
 
-## Verified audit-remediation source
+## Verified candidate source
+
+- Candidate source revision: `b09553fd443eaa861691fcbc0ba4068404d90a45`
+- Candidate package: `flopeek@0.2.1-beta.4` (`beta` dist-tag)
+- Candidate workflow run: `31301004920`
+- Candidate evidence artifact: `9034711218`
+- Candidate status: `blocked` (`nativeDefaultEligible: false`)
+- Linux x64 candidate binary SHA-256:
+  `b0636e3d3cd737af5e93d653db184c373a4b66f24baba223b162b45edbe5c2b4`
+- Candidate verification date: `2026-08-09`
+
+The candidate is immutable and all evidence in this document is bound to the
+source revision and binary above. The candidate passed six-platform build and
+correctness jobs, but its rollout decision remains blocked by the measured
+performance/memory gates and the incomplete elapsed dogfood window.
+
+## Historical audit-remediation source
 
 - Audited baseline: `48ab710f167edd5f19d3b70f6574a05c254c9578`
 - Native evidence implementation SHA: `5e404b126ad8b96bbfadd9ae38675a77c58b430e`
@@ -16,9 +32,8 @@ dogfooding.
   `7acf85ddcbad49301b9bab2ccfd66b7b4ef1e8462ec6d7f39d8cb9665b572d59`
 - Verification date: `2026-08-02`
 
-The implementation SHAs above are the code/evidence commits. This tracker is an
-attestation follow-up and therefore is not part of that self-referenced source
-commit.
+These historical SHAs identify the original audit-remediation work; they are
+not the source of the current candidate.
 
 ## Audit remediation status
 
@@ -34,7 +49,7 @@ commit.
 | Supply-chain workflow | `passing` | Third-party Actions are full-commit-SHA pinned, unnecessary promotion OIDC permission is removed, Dependabot covers GitHub Actions, and actionlint passed. |
 | Package identity | `passing` | Legacy `.flowpeek` examples/cache references were normalized to `.flopeek`; package, audit, and clean-room checks passed. |
 
-## Current verified commands
+## Historical local verification (2026-08-02)
 
 - `cargo fmt --check --manifest-path native/flopeek-core/Cargo.toml` — passed.
 - `cargo clippy --locked --manifest-path native/flopeek-core/Cargo.toml -- -D warnings` — passed.
@@ -60,14 +75,24 @@ commit.
   and zero target-repository writes.
 - `npm run check:docs`, `npm run check:support`, `npm run check:document-contracts`, and actionlint 1.7.12 — passed.
 
+## Current candidate verification (2026-08-09)
+
+- Candidate workflow `31301004920`: all required correctness, Rust MSRV, packaging, and six platform jobs passed.
+- Rust candidate source: `cargo fmt --check`, `cargo clippy --locked -- -D warnings`, and `cargo test --locked` passed (136 tests).
+- JavaScript unit suite: `npm run test:unit` passed (264 tests).
+- Timeout/fallback recovery: timeout-before-promotion rolls back before JavaScript fallback; timeout-after-commit recovers the late native graph and never runs JavaScript; concurrent native writers serialize safely.
+- Candidate evidence: 5 repositories, 6 platform packages, 8 pinned real repositories, 29/29 exact adapter cases, raw query/surface samples, memory measurements, metadata-only database-open, and 2,000-event soak are revision/binary bound.
+- Candidate decision: `eligible: false`, `selectedImplementation: javascript`, rollback `automatic-javascript-fallback-required`.
+
 ## Candidate and rollout gates
 
 | Gate | Status | Remaining external evidence |
 | --- | --- | --- |
-| Six-platform candidate | `pending` | GitHub Actions must build and install the exact Linux, macOS, and Windows x64/arm64 artifacts from the verified source SHA. Local Windows evidence cannot replace these jobs. |
-| Candidate manifest/provenance | `pending` | The candidate workflow must checksum the main tarball, six platform tarballs/binaries, raw parity/corpus/benchmark/profile/database/soak/surface evidence, and test summary. |
-| Protected promotion | `blocked` | Repository environment approval and immutable candidate provenance must exist before npm or GitHub Release publication. No publication was attempted locally. |
-| Seven-day dogfooding | `pending` | Seven consecutive days across the declared repository/adapter/surface matrix cannot be manufactured in one remediation session. |
+| Six-platform candidate | `passed` | Run `31301004920` built and tested Linux, macOS, and Windows x64/arm64 artifacts from the exact candidate source. |
+| Candidate manifest/provenance | `passed` | Artifact `9034711218` contains the revision-bound manifest, six platform binaries, raw parity/corpus/benchmark/profile/database/soak/surface evidence, and test summary. |
+| Native-default eligibility | `blocked` | The measured candidate remains ineligible for native default: cold/unchanged/one-file regression and acceleration thresholds, memory proof, and elapsed dogfood are not satisfied. JavaScript remains selected. |
+| Protected promotion | `blocked` | npm and GitHub approvals are `not-approved`; no publication was attempted. |
+| Seven-day dogfooding | `pending (1/7)` | Run `31301965455` recorded the first valid UTC day (`2026-08-09`) against the exact source and binary. Six consecutive days remain. |
 
 The GitHub Actions workflow `native-dogfood.yml` carries the exact blocked
 candidate binary between daily runs. Each run appends one UTC day to the
