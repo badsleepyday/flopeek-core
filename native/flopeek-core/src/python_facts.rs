@@ -9,10 +9,6 @@ use std::collections::{BTreeMap, BTreeSet};
 use tree_sitter::{Node, Parser};
 
 const PARSER: &str = "python-lezer";
-fn kids(n: Node<'_>) -> Vec<Node<'_>> {
-    let mut c = n.walk();
-    n.named_children(&mut c).collect()
-}
 fn text(n: Node<'_>, s: &str) -> Option<String> {
     n.utf8_text(s.as_bytes()).ok().map(str::to_string)
 }
@@ -23,8 +19,12 @@ fn top(n: Node<'_>) -> bool {
         })
 }
 fn name(n: Node<'_>, s: &str) -> Option<String> {
-    n.child_by_field_name("name")
-        .or_else(|| kids(n).into_iter().find(|x| x.kind() == "identifier"))
+    if let Some(name) = n.child_by_field_name("name").and_then(|x| text(x, s)) {
+        return Some(name);
+    }
+    let mut cursor = n.walk();
+    n.named_children(&mut cursor)
+        .find(|child| child.kind() == "identifier")
         .and_then(|x| text(x, s))
 }
 fn ev(p: &str, s: &str, n: Node<'_>) -> NativeJsEvidence {
@@ -100,32 +100,36 @@ fn bindings(n: Node<'_>, s: &str, o: &mut BTreeMap<String, (String, String)>) {
     }
 }
 fn methods(n: Node<'_>, s: &str) -> Vec<String> {
-    n.child_by_field_name("body")
-        .map(kids)
-        .unwrap_or_default()
-        .into_iter()
-        .filter(|x| x.kind() == "function_definition")
-        .filter_map(|x| name(x, s))
+    let Some(body) = n.child_by_field_name("body") else {
+        return Vec::new();
+    };
+    let mut cursor = body.walk();
+    body.named_children(&mut cursor)
+        .filter(|child| child.kind() == "function_definition")
+        .filter_map(|child| name(child, s))
         .collect()
 }
 fn function_signature(n: Node<'_>, s: &str) -> String {
     let parameters = n
         .child_by_field_name("parameters")
-        .map(kids)
-        .unwrap_or_default()
-        .into_iter()
-        .map(|parameter| {
-            parameter
-                .child_by_field_name("type")
-                .and_then(|kind| text(kind, s))
-                .map(|kind| {
-                    kind.chars()
-                        .filter(|value| !value.is_whitespace())
-                        .collect()
+        .map(|parameters| {
+            let mut cursor = parameters.walk();
+            parameters
+                .named_children(&mut cursor)
+                .map(|parameter| {
+                    parameter
+                        .child_by_field_name("type")
+                        .and_then(|kind| text(kind, s))
+                        .map(|kind| {
+                            kind.chars()
+                                .filter(|value| !value.is_whitespace())
+                                .collect()
+                        })
+                        .unwrap_or_else(|| "unknown".to_string())
                 })
-                .unwrap_or_else(|| "unknown".to_string())
+                .collect::<Vec<_>>()
         })
-        .collect::<Vec<_>>()
+        .unwrap_or_default()
         .join(",");
     let return_type = n
         .child_by_field_name("return_type")
@@ -223,7 +227,8 @@ fn module_bindings(n: Node<'_>, s: &str, bindings: &mut BTreeMap<String, String>
             }
         }
     }
-    for child in kids(n) {
+    let mut cursor = n.walk();
+    for child in n.named_children(&mut cursor) {
         module_bindings(child, s, bindings);
     }
 }
@@ -291,11 +296,13 @@ fn collect_framework_commands(
     facts: &mut NativeJsStructuralFacts,
 ) {
     let (typer_receivers, flask_receivers) = framework_receivers(source, imported, modules);
-    for statement in kids(root) {
+    let mut root_cursor = root.walk();
+    for statement in root.named_children(&mut root_cursor) {
         let Some(definition) = (statement.kind() == "decorated_definition")
             .then(|| {
-                kids(statement)
-                    .into_iter()
+                let mut statement_cursor = statement.walk();
+                statement
+                    .named_children(&mut statement_cursor)
                     .find(|child| child.kind() == "function_definition")
             })
             .flatten()
@@ -305,8 +312,9 @@ fn collect_framework_commands(
         let Some(target_name) = name(definition, source) else {
             continue;
         };
-        for decorator in kids(statement)
-            .into_iter()
+        let mut decorator_cursor = statement.walk();
+        for decorator in statement
+            .named_children(&mut decorator_cursor)
             .filter(|child| child.kind() == "decorator")
         {
             let value = text(decorator, source).unwrap_or_default();
@@ -367,7 +375,8 @@ fn collect_framework_commands(
     if command_name.is_empty() || command_name.starts_with('_') {
         return;
     }
-    let command = kids(root).into_iter().find(|node| {
+    let mut root_cursor = root.walk();
+    let command = root.named_children(&mut root_cursor).find(|node| {
         node.kind() == "class_definition" && name(*node, source).as_deref() == Some("Command")
     });
     let Some(command) = command else {
@@ -437,31 +446,31 @@ fn collect(
                     symbol_type: "class".into(),
                     name: class_name.clone(),
                 };
-                for method in n
-                    .child_by_field_name("body")
-                    .map(kids)
-                    .unwrap_or_default()
-                    .into_iter()
-                    .filter(|child| child.kind() == "function_definition")
-                {
-                    if let Some(method_name) = name(method, s) {
-                        f.canonical_symbols.push(NativeJsStructuralSymbol {
-                            symbol_type: "method".into(),
-                            name: method_name.clone(),
-                            methods: vec![],
-                            evidence: ev(p, s, method),
-                            identity: Some(NativeJsCanonicalSymbolIdentity {
-                                qualified_name: format!("{class_name}.{method_name}"),
-                                lexical_owner: Some(owner.clone()),
-                                signature: Some(function_signature(method, s)),
-                                discriminator: if method_name == "__init__" {
-                                    "constructor"
-                                } else {
-                                    "instance-method"
-                                }
-                                .into(),
-                            }),
-                        });
+                if let Some(body) = n.child_by_field_name("body") {
+                    let mut body_cursor = body.walk();
+                    for method in body
+                        .named_children(&mut body_cursor)
+                        .filter(|child| child.kind() == "function_definition")
+                    {
+                        if let Some(method_name) = name(method, s) {
+                            f.canonical_symbols.push(NativeJsStructuralSymbol {
+                                symbol_type: "method".into(),
+                                name: method_name.clone(),
+                                methods: vec![],
+                                evidence: ev(p, s, method),
+                                identity: Some(NativeJsCanonicalSymbolIdentity {
+                                    qualified_name: format!("{class_name}.{method_name}"),
+                                    lexical_owner: Some(owner.clone()),
+                                    signature: Some(function_signature(method, s)),
+                                    discriminator: if method_name == "__init__" {
+                                        "constructor"
+                                    } else {
+                                        "instance-method"
+                                    }
+                                    .into(),
+                                }),
+                            });
+                        }
                     }
                 }
             }
@@ -511,8 +520,9 @@ fn collect(
         }
         _ => {}
     }
-    for x in kids(n) {
-        collect(x, p, s, b, f)
+    let mut cursor = n.walk();
+    for child in n.named_children(&mut cursor) {
+        collect(child, p, s, b, f);
     }
 }
 pub fn parse_native_python_facts(path: &str, source: &str) -> Option<NativeJsFacts> {
@@ -536,8 +546,9 @@ pub fn parse_native_python_facts_with_parser(
         if matches!(n.kind(), "import_statement" | "import_from_statement") {
             bindings(n, s, b)
         }
-        for x in kids(n) {
-            walk(x, s, b)
+        let mut cursor = n.walk();
+        for child in n.named_children(&mut cursor) {
+            walk(child, s, b);
         }
     }
     walk(r, source, &mut b);
