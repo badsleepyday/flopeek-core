@@ -79,7 +79,9 @@ test("candidate workflow builds each platform once and produces one immutable co
   assert.match(workflow, /matrix:[\s\S]*@flopeek\/native-win32-x64[\s\S]*@flopeek\/native-win32-arm64[\s\S]*@flopeek\/native-linux-x64-gnu[\s\S]*@flopeek\/native-linux-arm64-gnu[\s\S]*@flopeek\/native-darwin-x64[\s\S]*@flopeek\/native-darwin-arm64/);
   assert.match(workflow, /tar -xOf "\$tarball" package\/bin\/flopeek-native-core/);
   assert.match(workflow, /run-native-candidate-evidence\.js/);
+  assert.match(workflow, /create-native-dogfood-pending\.js/);
   assert.match(workflow, /build-native-rollout-evidence\.js/);
+  assert.match(workflow, /--dogfood "\$CANDIDATE_EVIDENCE\/native-dogfood\.json"/);
   assert.match(workflow, /CANDIDATE_BUNDLE=\$\{\{ runner\.temp \}\}\/flopeek-native-bundle/);
   assert.match(workflow, /npm pack --json --pack-destination \$env:CANDIDATE_BUNDLE/);
   assert.match(workflow, /--output "\$CANDIDATE_EVIDENCE\/native-rollout-evidence\.json"/);
@@ -89,6 +91,20 @@ test("candidate workflow builds each platform once and produces one immutable co
   assert.match(workflow, /pattern: native-candidate-install-\*/);
   assert.match(workflow, /name: native-candidate-bundle/);
   assert.doesNotMatch(workflow, /npm publish|gh release create|git push/);
+  assert.doesNotMatch(workflow, /continue-on-error|\|\|\s*true/);
+  assertThirdPartyActionsPinned(workflow);
+});
+
+test("native dogfood workflow accumulates only exact revision-bound UTC days", () => {
+  const workflow = readWorkflow("native-dogfood.yml");
+  assert.match(workflow, /workflow_dispatch:/);
+  for (const input of ["source_sha", "candidate_run_id", "binary_sha256", "previous_dogfood_run_id"]) {
+    assert.match(workflow, new RegExp(`\\n\\s{6}${input}:`));
+  }
+  assert.match(workflow, /actions\/download-artifact@[a-f0-9]{40}[\s\S]*run-id: \$\{\{ inputs\.candidate_run_id \}\}/);
+  assert.match(workflow, /run-native-dogfood-day\.js/);
+  assert.match(workflow, /build-native-dogfood-evidence\.js/);
+  assert.match(workflow, /verify-native-dogfood\.js/);
   assert.doesNotMatch(workflow, /continue-on-error|\|\|\s*true/);
   assertThirdPartyActionsPinned(workflow);
 });

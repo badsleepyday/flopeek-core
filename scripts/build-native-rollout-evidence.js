@@ -12,6 +12,10 @@ const { NATIVE_PROTOCOL_VERSION } = require("../src/native-protocol-client");
 const { nativePlatformTarget } = require("../src/native-platform-targets");
 const { evaluateNativeDefaultRollout } = require("../src/native-rollout-gate");
 const {
+  buildPendingNativeDogfoodEvidence,
+  validateNativeDogfoodEvidence,
+} = require("../src/native-dogfood-evidence");
+const {
   NATIVE_ROLLOUT_EVIDENCE_SCHEMA,
   loadDatabaseOpenEvidence,
 } = require("../src/native-rollout-evidence");
@@ -405,6 +409,7 @@ function buildPacket({
   databaseOpenEvidence,
   soakEvidence,
   surfaceEvidence,
+  dogfoodEvidence = null,
   allowIneligible = false,
   execFileSync,
 }) {
@@ -423,6 +428,16 @@ function buildPacket({
   const databaseOpen = loadDatabaseOpenEvidence(databaseOpenEvidence, binaries);
   const soak = validateSoakEvidence(soakEvidence, binaries);
   const surfaces = validateSurfaceEvidence(surfaceEvidence, binaries);
+  const dogfood = dogfoodEvidence
+    ? readJson(dogfoodEvidence)
+    : buildPendingNativeDogfoodEvidence({
+      sourceRevision: parityBinary.repositoryRevision,
+      binarySha256: parityBinary.binarySha256,
+    });
+  validateNativeDogfoodEvidence(dogfood, {
+    sourceRevision: parityBinary.repositoryRevision,
+    binarySha256: parityBinary.binarySha256,
+  });
   if (candidate?.performanceAssertions?.databaseOpenEvidenceSha256 !== databaseOpen.sha256) {
     throw new Error("Candidate database-open evidence SHA-256 does not match the validated evidence file.");
   }
@@ -440,6 +455,7 @@ function buildPacket({
       stabilitySoak: soak,
       surfaceMatrix: surfaces,
     },
+    dogfood,
   };
   const decision = evaluateNativeDefaultRollout(evidence);
   if (!decision.eligible && !allowIneligible) {
@@ -480,10 +496,11 @@ if (require.main === module) {
   const databaseOpenEvidence = argument(argv, "--database-open-evidence");
   const soakEvidence = argument(argv, "--soak");
   const surfaceEvidence = argument(argv, "--surface-matrix");
+  const dogfoodEvidence = argument(argv, "--dogfood");
   const output = argument(argv, "--output");
   const allowIneligible = argv.includes("--allow-ineligible");
   if (![candidateFile, adapterParityFile, benchmarkFile, profiles, assets, databaseOpenEvidence, soakEvidence, surfaceEvidence, output].every(Boolean)) {
-    throw new Error("Usage: build-native-rollout-evidence --candidate <json> --adapter-parity <json> --benchmark <json> --profiles <directory> --assets <directory> --database-open-evidence <json> --soak <json> --surface-matrix <json> --output <json>.");
+    throw new Error("Usage: build-native-rollout-evidence --candidate <json> --adapter-parity <json> --benchmark <json> --profiles <directory> --assets <directory> --database-open-evidence <json> --soak <json> --surface-matrix <json> [--dogfood <json>] --output <json>.");
   }
   const packet = buildPacket({
     root,
@@ -495,6 +512,7 @@ if (require.main === module) {
     databaseOpenEvidence: path.resolve(databaseOpenEvidence),
     soakEvidence: path.resolve(soakEvidence),
     surfaceEvidence: path.resolve(surfaceEvidence),
+    dogfoodEvidence: dogfoodEvidence ? path.resolve(dogfoodEvidence) : null,
     allowIneligible,
   });
   fs.writeFileSync(path.resolve(output), `${JSON.stringify(packet, null, 2)}\n`);
@@ -510,4 +528,5 @@ module.exports = {
   validateProfiles,
   validateSoakEvidence,
   validateSurfaceEvidence,
+  validateNativeDogfoodEvidence,
 };

@@ -15,6 +15,7 @@ const {
   validatePlatformInstallEvidence,
 } = require("../../scripts/native-candidate-bundle");
 const { buildEvidenceManifest } = require("../../scripts/build-native-candidate-evidence-manifest");
+const { buildPendingNativeDogfoodEvidence } = require("../../src/native-dogfood-evidence");
 const { adapterContractDigest } = require("../../src/adapter-registry");
 const { NATIVE_PLATFORM_TARGETS } = require("../../src/native-platform-targets");
 
@@ -139,6 +140,10 @@ test("blocked candidate evidence manifest binds all six platform tarballs and th
       binarySha256: String(index).padStart(64, "0"),
     }];
   }));
+  const dogfood = buildPendingNativeDogfoodEvidence({
+    sourceRevision: sourceSha,
+    binarySha256: binaries["@flopeek/native-linux-x64-gnu"].binarySha256,
+  });
   fs.writeFileSync(path.join(root, "native-rollout-evidence.json"), JSON.stringify({
     schemaVersion: "flopeek-native-rollout-evidence/v2",
     status: "blocked",
@@ -154,8 +159,10 @@ test("blocked candidate evidence manifest binds all six platform tarballs and th
       selectedImplementation: "javascript",
       rollback: "automatic-javascript-fallback-required",
     },
+    evidence: { dogfood },
   }, null, 2));
   fs.writeFileSync(path.join(root, "benchmark.json"), "{}\n");
+  fs.writeFileSync(path.join(root, "native-dogfood.json"), `${JSON.stringify(dogfood, null, 2)}\n`);
   const output = path.join(root, "native-candidate-evidence-manifest.json");
   const manifest = buildEvidenceManifest({
     bundle: root,
@@ -166,6 +173,6 @@ test("blocked candidate evidence manifest binds all six platform tarballs and th
   });
   assert.equal(manifest.status, "blocked");
   assert.equal(manifest.decision.eligible, false);
-  assert.equal(Object.keys(manifest.files).length, 8);
+  assert.equal(Object.keys(manifest.files).length, 9);
   assert.equal(manifest.files["native-rollout-evidence.json"], crypto.createHash("sha256").update(fs.readFileSync(path.join(root, "native-rollout-evidence.json"))).digest("hex"));
 });

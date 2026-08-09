@@ -9,6 +9,7 @@ const fs = require("node:fs");
 const path = require("node:path");
 const { nativePlatformPackageNames } = require("../src/native-platform-targets");
 const { NATIVE_ROLLOUT_EVIDENCE_SCHEMA } = require("../src/native-rollout-evidence");
+const { validateNativeDogfoodEvidence } = require("../src/native-dogfood-evidence");
 
 function argument(argv, name) {
   const index = argv.indexOf(name);
@@ -57,7 +58,20 @@ function buildEvidenceManifest({ bundle, sourceSha, packageVersion, workflowRunI
   if (!binaries || packages.some((name) => !binaries[name])) {
     throw new Error("Blocked evidence must retain all six native platform bindings.");
   }
-  const tgzFiles = files(root).filter((file) => file.endsWith(".tgz"));
+  const allFiles = files(root);
+  const dogfoodFile = path.join(root, "native-dogfood.json");
+  if (!allFiles.includes("native-dogfood.json")) {
+    throw new Error("Blocked evidence must retain the exact pending or complete native dogfood window.");
+  }
+  const dogfood = JSON.parse(fs.readFileSync(dogfoodFile, "utf8"));
+  validateNativeDogfoodEvidence(dogfood, {
+    sourceRevision: sourceSha,
+    binarySha256: binaries["@flopeek/native-linux-x64-gnu"]?.binarySha256,
+  });
+  if (JSON.stringify(packet.evidence?.dogfood) !== JSON.stringify(dogfood)) {
+    throw new Error("Blocked packet dogfood evidence does not match the retained native-dogfood.json file.");
+  }
+  const tgzFiles = allFiles.filter((file) => file.endsWith(".tgz"));
   for (const packageName of packages) {
     const prefix = `${packageName.replace("@flopeek/", "flopeek-")}-${packageVersion}.tgz`;
     const filename = tgzFiles.find((file) => path.basename(file) === prefix);
@@ -66,7 +80,7 @@ function buildEvidenceManifest({ bundle, sourceSha, packageVersion, workflowRunI
     }
   }
   const outputRelative = path.relative(root, path.resolve(output)).replaceAll("\\", "/");
-  const checksums = Object.fromEntries(files(root)
+  const checksums = Object.fromEntries(allFiles
     .filter((file) => file !== outputRelative)
     .map((file) => [file, sha256File(path.join(root, file))]));
   const manifest = {

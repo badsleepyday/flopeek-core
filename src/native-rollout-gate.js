@@ -1,6 +1,7 @@
 "use strict";
 
 const { adapterContractDigest, getAdapterRegistry } = require("./adapter-registry");
+const { validateNativeDogfoodEvidence } = require("./native-dogfood-evidence");
 const NATIVE_ROLLOUT_GATE_SCHEMA = "flopeek-native-rollout-gate/v1";
 const MINIMUM_BENCHMARK_REPOSITORIES = 5;
 const MAXIMUM_REGRESSION_SPEEDUP = 0.9;
@@ -273,6 +274,14 @@ function hasDatabaseOpenEvidence(performance) {
     && observations.sqliteOperations[0] === "current-complete-graph-metadata";
 }
 
+function hasNativeDogfoodEvidence(value, binding = {}) {
+  try {
+    return validateNativeDogfoodEvidence(value, binding).status === "complete";
+  } catch {
+    return false;
+  }
+}
+
 function benchmarkRows(report) {
   return Array.isArray(report?.rows) ? report.rows : [];
 }
@@ -395,6 +404,11 @@ function evaluateNativeDefaultRollout(evidence = {}) {
     || performance.contextRefP95Ms >= 20) reasons.push("context-ref-p95-not-proven");
   if (!hasDatabaseOpenEvidence(performance)) reasons.push("database-open-behavior-not-proven");
   if (performance.memoryPeakNoWorseThanJavaScript !== true) reasons.push("memory-peak-not-proven");
+  const benchmarkArtifact = evidence.benchmark?.nativeArtifact;
+  if (!hasNativeDogfoodEvidence(evidence.dogfood, {
+    sourceRevision: benchmarkArtifact?.repositoryRevision,
+    binarySha256: benchmarkArtifact?.binarySha256,
+  })) reasons.push("native-dogfood-window-incomplete");
 
   return Object.freeze({
     schemaVersion: NATIVE_ROLLOUT_GATE_SCHEMA,
@@ -426,6 +440,7 @@ module.exports = {
   NATIVE_BENCHMARK_SCHEMA,
   REQUIRED_QUERY_OPERATION_P95_MS,
   REQUIRED_NATIVE_ADAPTERS,
+  hasNativeDogfoodEvidence,
   evaluateNativeDefaultRollout,
   nativeAdaptersFromParity,
   validateNativeAdapterParity,

@@ -1,0 +1,122 @@
+name: Native dogfood window
+
+on:
+  workflow_dispatch:
+    inputs:
+      source_sha:
+        description: Exact source commit used by the candidate binary.
+        required: true
+        type: string
+      candidate_run_id:
+        description: Candidate workflow run that produced the blocked six-platform evidence bundle.
+        required: true
+        type: string
+      binary_sha256:
+        description: Exact Linux x64 candidate binary SHA-256.
+        required: true
+        type: string
+      previous_dogfood_run_id:
+        description: Previous Native dogfood window run ID, if continuing an existing window.
+        required: false
+        type: string
+
+permissions:
+  actions: read
+  contents: read
+
+concurrency:
+  group: native-dogfood-${{ inputs.source_sha }}
+  cancel-in-progress: false
+
+jobs:
+  collect:
+    name: Record one exact native dogfood day
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
+        with:
+          ref: ${{ inputs.source_sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7
+        with:
+          node-version: 22
+          cache: npm
+      - run: npm ci
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: native-candidate-evidence-blocked
+          path: candidate-bundle
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.candidate_run_id }}
+      - name: Verify candidate binary identity
+        shell: bash
+        run: |
+          set -euo pipefail
+          expected='${{ inputs.binary_sha256 }}'
+          if ! [[ "$expected" =~ ^[a-f0-9]{64}$ ]]; then
+            echo 'binary_sha256 must be a lowercase SHA-256.' >&2
+            exit 1
+          fi
+          package_version=$(node -p "require('./package.json').version")
+          tarball="candidate-bundle/flopeek-native-linux-x64-gnu-${package_version}.tgz"
+          test -f "$tarball"
+          node - <<'NODE'
+          const fs = require('node:fs');
+          const packet = JSON.parse(fs.readFileSync('candidate-bundle/native-rollout-evidence.json', 'utf8'));
+          const source = process.env.SOURCE_SHA;
+          const binary = process.env.BINARY_SHA256;
+          const binding = packet.binding?.binaries?.['@flopeek/native-linux-x64-gnu'];
+          if (packet.status !== 'blocked' || packet.decision?.eligible !== false
+            || packet.binding?.repositoryRevision !== source
+            || binding?.repositoryRevision !== source
+            || binding?.binarySha256 !== binary) {
+            throw new Error('Candidate packet is not the exact blocked source/binary identity.');
+          }
+          NODE
+          mkdir -p native/flopeek-core/target/release
+          tar -xOf "$tarball" package/bin/flopeek-native-core > native/flopeek-core/target/release/flopeek-native-core
+          chmod +x native/flopeek-core/target/release/flopeek-native-core
+          actual=$(sha256sum native/flopeek-core/target/release/flopeek-native-core | awk '{print $1}')
+          test "$actual" = "$expected"
+        env:
+          SOURCE_SHA: ${{ inputs.source_sha }}
+          BINARY_SHA256: ${{ inputs.binary_sha256 }}
+      - name: Restore previous dogfood days
+        if: inputs.previous_dogfood_run_id != ''
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8
+        with:
+          name: native-dogfood-window
+          path: dogfood-days
+          github-token: ${{ github.token }}
+          repository: ${{ github.repository }}
+          run-id: ${{ inputs.previous_dogfood_run_id }}
+      - name: Record current UTC dogfood day
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p dogfood-days
+          day=$(date -u +%F)
+          node scripts/run-native-dogfood-day.js \
+            --binary native/flopeek-core/target/release/flopeek-native-core \
+            --source-revision '${{ inputs.source_sha }}' \
+            --output "dogfood-days/$day.json" \
+            --work-directory "${RUNNER_TEMP}/flopeek-native-dogfood"
+      - name: Aggregate and validate the elapsed window
+        shell: bash
+        run: |
+          set -euo pipefail
+          node scripts/build-native-dogfood-evidence.js \
+            --days dogfood-days \
+            --source-revision '${{ inputs.source_sha }}' \
+            --binary-sha256 '${{ inputs.binary_sha256 }}' \
+            --output native-dogfood.json
+          node scripts/verify-native-dogfood.js --file native-dogfood.json
+      - uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7
+        with:
+          name: native-dogfood-window
+          path: |
+            native-dogfood.json
+            dogfood-days/
+          if-no-files-found: error
+          retention-days: 30
