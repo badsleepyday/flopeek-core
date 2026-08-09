@@ -1,6 +1,7 @@
 "use strict";
 
 const assert = require("node:assert/strict");
+const crypto = require("node:crypto");
 const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
@@ -13,6 +14,7 @@ const {
   validateChecksums,
   validatePlatformInstallEvidence,
 } = require("../../scripts/native-candidate-bundle");
+const { buildEvidenceManifest } = require("../../scripts/build-native-candidate-evidence-manifest");
 const { adapterContractDigest } = require("../../src/adapter-registry");
 const { NATIVE_PLATFORM_TARGETS } = require("../../src/native-platform-targets");
 
@@ -121,4 +123,49 @@ test("platform install evidence must cover every exact artifact and fail closed 
   tampered.binarySha256 = "f".repeat(64);
   fs.writeFileSync(first, JSON.stringify(tampered));
   assert.throws(() => validatePlatformInstallEvidence(root, manifest), /invalid/);
+});
+
+test("blocked candidate evidence manifest binds all six platform tarballs and the negative gate decision", (context) => {
+  const root = fs.mkdtempSync(path.join(os.tmpdir(), "flopeek-blocked-evidence-"));
+  context.after(() => fs.rmSync(root, { recursive: true, force: true }));
+  const sourceSha = "a".repeat(40);
+  const packageVersion = "1.2.3-beta.4";
+  const binaries = Object.fromEntries(NATIVE_PLATFORM_TARGETS.map((target, index) => {
+    const filename = `${target.packageName.replace("@flopeek/", "flopeek-")}-${packageVersion}.tgz`;
+    const bytes = Buffer.from(`native-${index}`);
+    fs.writeFileSync(path.join(root, filename), bytes);
+    return [target.packageName, {
+      tarballSha256: crypto.createHash("sha256").update(bytes).digest("hex"),
+      binarySha256: String(index).padStart(64, "0"),
+    }];
+  }));
+  fs.writeFileSync(path.join(root, "native-rollout-evidence.json"), JSON.stringify({
+    schemaVersion: "flopeek-native-rollout-evidence/v2",
+    status: "blocked",
+    binding: {
+      packageName: "flopeek",
+      packageVersion,
+      repositoryRevision: sourceSha,
+      binaries,
+    },
+    decision: {
+      eligible: false,
+      reasons: ["cold-benchmark-regression-exceeds-10-percent"],
+      selectedImplementation: "javascript",
+      rollback: "automatic-javascript-fallback-required",
+    },
+  }, null, 2));
+  fs.writeFileSync(path.join(root, "benchmark.json"), "{}\n");
+  const output = path.join(root, "native-candidate-evidence-manifest.json");
+  const manifest = buildEvidenceManifest({
+    bundle: root,
+    sourceSha,
+    packageVersion,
+    workflowRunId: "123",
+    output,
+  });
+  assert.equal(manifest.status, "blocked");
+  assert.equal(manifest.decision.eligible, false);
+  assert.equal(Object.keys(manifest.files).length, 8);
+  assert.equal(manifest.files["native-rollout-evidence.json"], crypto.createHash("sha256").update(fs.readFileSync(path.join(root, "native-rollout-evidence.json"))).digest("hex"));
 });

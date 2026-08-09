@@ -94,6 +94,7 @@
     "verify:github-release": "node scripts/verify-github-release.js",
     "verify:published-release": "node scripts/verify-published-release.js",
     "build:native-rollout-evidence": "node scripts/build-native-rollout-evidence.js",
+    "build:native-candidate-evidence-manifest": "node scripts/build-native-candidate-evidence-manifest.js",
     "build:native-release-manifest": "node scripts/build-native-release-manifest.js",
     "update:clean-room-evidence": "node scripts/verify-clean-room.js --output packaging/evidence/clean-room-current.json",
     "evaluate:agent-comparison": "node src/cli.js evaluate agent-comparison . --cases benchmarks/orientation-cases.json --runs benchmarks/agent-comparison-runs.template.json",

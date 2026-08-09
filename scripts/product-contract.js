@@ -67,7 +67,8 @@ function buildProductContractFromInputs(inputs) {
   }
   const preview = cleanRoomEvidence.packageAudit?.package;
   if (!preview?.version || cleanRoomEvidence.status !== "passed") throw new Error("Last verified preview evidence is missing or incomplete.");
-  const nativeRolloutComplete = rolloutEvidence.status === "complete";
+  const nativeRolloutComplete = rolloutEvidence.status === "complete"
+    && rolloutEvidence.decision?.eligible !== false;
   return {
     schemaVersion: PRODUCT_CONTRACT_SCHEMA,
     package: {

@@ -38,6 +38,18 @@ test("product contract rejects source-version and Node-minimum contradictions", 
   assert.throws(() => buildProductContractFromInputs(nodeMismatch), /Node minimum differs/);
 });
 
+test("a complete evidence packet with a negative native gate remains non-eligible", () => {
+  const blocked = inputs();
+  blocked.rolloutEvidence = {
+    ...blocked.rolloutEvidence,
+    status: "blocked",
+    decision: { eligible: false, reasons: ["memory-peak-not-proven"] },
+  };
+  const contract = buildProductContractFromInputs(blocked);
+  assert.equal(contract.core.nativeRolloutStatus, "blocked");
+  assert.equal(contract.core.nativeDefaultEligible, false);
+});
+
 test("generated documentation detects version, Node, language, and native-default drift", () => {
   const contract = buildProductContractFromInputs(inputs());
   const originals = Object.fromEntries(DOCUMENTS.map((name) => [name, fs.readFileSync(path.join(ROOT, name), "utf8")]));

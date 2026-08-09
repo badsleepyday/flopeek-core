@@ -35,7 +35,7 @@ function incompletePacket(root) {
   };
 }
 
-function preparePacket({ root, inputs, assets }) {
+function preparePacket({ root, inputs, assets, allowIneligible = false }) {
   if (!fs.existsSync(inputs)) return incompletePacket(root);
   if (!fs.statSync(inputs).isDirectory()) throw new Error("Native rollout inputs must be a directory.");
   const candidate = path.join(inputs, "candidate.json");
@@ -60,6 +60,7 @@ function preparePacket({ root, inputs, assets }) {
     databaseOpenEvidence,
     soakEvidence,
     surfaceEvidence,
+    allowIneligible,
   });
 }
 
@@ -69,6 +70,7 @@ function main() {
   const inputs = argument(argv, "--inputs");
   const assets = argument(argv, "--assets");
   const output = argument(argv, "--output");
+  const allowIneligible = argv.includes("--allow-ineligible");
   if (!inputs || !assets || !output) {
     throw new Error("Usage: prepare-native-rollout-evidence --inputs <directory> --assets <directory> --output <json>.");
   }
@@ -76,6 +78,7 @@ function main() {
     root,
     inputs: path.resolve(inputs),
     assets: path.resolve(assets),
+    allowIneligible,
   });
   fs.writeFileSync(path.resolve(output), `${JSON.stringify(packet, null, 2)}\n`);
   process.stdout.write(`Prepared ${packet.status} native rollout evidence from the exact release set.\n`);

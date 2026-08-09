@@ -109,7 +109,7 @@ function loadBundledNativeRolloutEvidence(root = path.resolve(__dirname, ".."), 
   const packageJson = JSON.parse(readFile(path.join(root, "package.json"), "utf8"));
   const packet = JSON.parse(readFile(path.join(root, "packaging", "native-rollout-evidence.json"), "utf8"));
   if (!packet || packet.schemaVersion !== NATIVE_ROLLOUT_EVIDENCE_SCHEMA
-    || !["incomplete", "complete"].includes(packet.status)
+    || !["incomplete", "blocked", "complete"].includes(packet.status)
     || !packet.binding || typeof packet.binding !== "object") {
     throw new Error(`Bundled native rollout evidence must use ${NATIVE_ROLLOUT_EVIDENCE_SCHEMA}.`);
   }
@@ -124,6 +124,15 @@ function loadBundledNativeRolloutEvidence(root = path.resolve(__dirname, ".."), 
       throw new Error("Incomplete native rollout evidence must not carry decision evidence or binary bindings.");
     }
     return Object.freeze({ packet, evidence: Object.freeze({}), complete: false });
+  }
+  if (packet.status === "blocked"
+    && (packet.decision?.eligible !== false
+      || !Array.isArray(packet.decision?.reasons)
+      || packet.decision.reasons.length === 0)) {
+    throw new Error("Blocked native rollout evidence must retain an explicit ineligible decision and gate reasons.");
+  }
+  if (packet.status === "complete" && packet.decision && packet.decision.eligible !== true) {
+    throw new Error("Complete native rollout evidence cannot carry an ineligible decision.");
   }
   const binaries = packet.binding.binaries;
   const repositoryRevision = packet.binding.repositoryRevision;
@@ -163,7 +172,11 @@ function loadBundledNativeRolloutEvidence(root = path.resolve(__dirname, ".."), 
   } catch (error) {
     throw new Error(`Complete native rollout evidence has invalid database-open evidence: ${error.message}`);
   }
-  return Object.freeze({ packet, evidence: Object.freeze(packet.evidence), complete: true });
+  return Object.freeze({
+    packet,
+    evidence: Object.freeze(packet.evidence),
+    complete: packet.status === "complete",
+  });
 }
 
 function probeVerifiedNativeRuntime(root = path.resolve(__dirname, ".."), options = {}) {
