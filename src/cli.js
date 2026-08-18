@@ -350,6 +350,7 @@ function printIntegration(result) {
   console.log(`${result.action}: ${result.ok ? "ready" : "blocked"}${result.dryRun ? " (dry run)" : ""}`);
   console.log(`Platforms: ${result.platforms.join(", ") || "none"}`);
   for (const item of result.plan) console.log(`${item.status.padEnd(9)} ${item.platform} ${item.kind}: ${item.path}${item.reason ? ` - ${item.reason}` : ""}`);
+  for (const warning of result.warnings || []) console.log(`${warning.status.padEnd(9)} ${warning.id}: ${warning.message}`);
 }
 
 function printDoctor(result) {
