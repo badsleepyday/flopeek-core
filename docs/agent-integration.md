@@ -87,6 +87,7 @@ promoting an incomplete graph; unbounded scanning is not interruptible.
 - **No host detected:** pass `--platform <id>` explicitly or install a supported host and ensure its executable is on PATH.
 - **Malformed JSON:** repair the host configuration manually; Flopeek will not replace it.
 - **Existing Flopeek entry:** remove or reconcile the unmanaged entry manually. Flopeek does not claim ownership of it.
+- **Global Codex MCP warning:** remove the `mcp_servers.flopeek` or legacy `mcp_servers.flowpeek` entry from the global Codex `config.toml`, then keep the repository-scoped `.codex/config.toml`. Flopeek reports this conflict but never edits the global file automatically.
 - **Modified installed skill:** keep the customization and resolve it manually, or restore the canonical content before uninstalling.
 - **MCP command not found:** install or link Flopeek so `flopeek` is on PATH, then rerun doctor.
 - **MCP tools do not appear after installation:** start a new host task after the project configuration is loaded. `doctor` checks the managed files and PATH; it does not start the host or prove a completed repository scan. Then call `get_scan_status` and wait for `complete`/`current` before using graph evidence.

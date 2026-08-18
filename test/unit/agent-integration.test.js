@@ -45,6 +45,29 @@ test("Codex install is project-local, idempotent, and preserves unrelated TOML",
   assert.equal(fs.readFileSync(path.join(root, ".codex", "config.toml"), "utf8").includes("mcp_servers.flopeek"), false);
 });
 
+test("Codex install and doctor report global Flopeek and legacy Flowpeek MCP entries without modifying them", (t) => {
+  for (const name of ["flopeek", "flowpeek"]) {
+    const root = repository(t);
+    const codexHome = path.join(root, "user-codex");
+    const globalConfig = path.join(codexHome, "config.toml");
+    fs.mkdirSync(codexHome, { recursive: true });
+    const content = `[mcp_servers.${name}]\ncommand = "${name}"\nargs = ["mcp", "C:/wrong-project"]\n`;
+    fs.writeFileSync(globalConfig, content, "utf8");
+
+    const installed = installAgentIntegration(root, { platforms: ["codex"], codexHome });
+    assert.equal(installed.ok, true);
+    assert.equal(installed.warnings.length, 1);
+    assert.equal(installed.warnings[0].id, "codex:global-mcp");
+    assert.deepEqual(installed.warnings[0].names, [name]);
+    assert.equal(fs.readFileSync(globalConfig, "utf8"), content);
+
+    const doctor = doctorAgentIntegration(root, { platforms: ["codex"], codexHome, env: { PATH: "" }, strict: true });
+    assert.equal(doctor.ok, false);
+    assert.equal(doctor.checks.find((check) => check.id === "codex:global-mcp").status, "warning");
+    assert.equal(fs.readFileSync(globalConfig, "utf8"), content);
+  }
+});
+
 test("JSON host install and uninstall preserve unrelated MCP servers and settings", (t) => {
   const root = repository(t);
   fs.mkdirSync(path.join(root, ".gemini"), { recursive: true });

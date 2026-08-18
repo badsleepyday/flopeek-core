@@ -3,6 +3,7 @@ const fs = require("node:fs");
 const os = require("node:os");
 const path = require("node:path");
 const { findPlatform, platformRegistry } = require("./agent-integration-registry");
+const { codexGlobalMcpCheck } = require("./codex-global-mcp");
 
 const AGENT_INTEGRATION_MANIFEST_SCHEMA = "flopeek-agent-integrations/v1";
 const MANAGED_BLOCK_START = "# >>> flopeek managed MCP >>>";
@@ -280,6 +281,9 @@ function integrationAction(root, action, options = {}) {
   const canonicalHash = directoryHash(CANONICAL_SKILL);
   const plan = platforms.flatMap((platform) => planPlatform(repository, platform, action, canonicalHash));
   const conflicts = plan.filter((item) => item.status === "conflict");
+  const warnings = platforms.some((platform) => platform.id === "codex")
+    ? [codexGlobalMcpCheck(repository, options)].filter((check) => check.status === "warning")
+    : [];
   executePlan(repository, platforms, action, plan, canonicalHash, Boolean(options.dryRun));
   return {
     schemaVersion: AGENT_INTEGRATION_MANIFEST_SCHEMA,
@@ -290,6 +294,7 @@ function integrationAction(root, action, options = {}) {
     platforms: platforms.map((platform) => platform.id),
     plan: plan.map((item) => ({ ...item, content: undefined })),
     conflicts,
+    warnings,
     manifest: action === "install" && !options.dryRun && !conflicts.length ? manifestPath(repository) : null,
   };
 }
@@ -316,6 +321,7 @@ function doctorAgentIntegration(root, options = {}) {
   for (const platform of platforms) {
     const executable = detectExecutable(platform.executables, options.env || process.env);
     checks.push({ id: `${platform.id}:host`, platform: platform.id, status: executable ? "pass" : "warning", message: executable ? `${platform.label} detected at ${executable.path}.` : `${platform.label} executable was not detected on PATH.` });
+    if (platform.id === "codex") checks.push(codexGlobalMcpCheck(repository, options));
     for (const item of planPlatform(repository, platform, "install", canonicalHash)) {
       checks.push({ id: `${platform.id}:${item.kind}`, platform: platform.id, status: item.status === "unchanged" ? "pass" : item.status === "conflict" ? "error" : "warning", message: item.status === "unchanged" ? `${item.kind} integration is current.` : item.reason || `${item.kind} integration is not installed.` });
     }
